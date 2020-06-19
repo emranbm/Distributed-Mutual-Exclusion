@@ -59,7 +59,7 @@ def initialize_arrays():
 
     for j in range(CURRENT_NODE_ID - 1):
         SV[j] = "R"
-    for j in range(CURRENT_NODE_ID, NODES_COUNT):
+    for j in range(CURRENT_NODE_ID - 1, NODES_COUNT):
         SV[j] = "N"
     for j in range(NODES_COUNT):
         SN[j] = 0
