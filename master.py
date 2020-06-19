@@ -16,6 +16,7 @@ TOTAL_RESOURCES = None
 communicator = None
 tasks = None
 node_ids = None
+done_tasks = 0
 
 node_pids = []
 
@@ -82,6 +83,12 @@ def on_msg_recieved(msg, addr):
     elif msg_type == message_types.REPORT:
         txt = msg['data']
         logging.info(f"Report from {node_id}: {txt}")
+        if txt == "Leaving Critical Section...":
+            global done_tasks
+            done_tasks += 1
+            if done_tasks == len(tasks):
+                logging.info("FINISHED!")
+                exit(0)
 
 
 def on_exit():
