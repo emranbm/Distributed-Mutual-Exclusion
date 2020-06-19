@@ -57,7 +57,7 @@ def read_tasks():
 def start_nodes(node_ids):
     for node_id in node_ids:
         proc = subprocess.Popen([sys.executable,
-                                 "node.py",
+                                 "worker.py",
                                  str(MASTER_PORT),
                                  str(len(node_ids)),
                                  str(TOTAL_RESOURCES),
