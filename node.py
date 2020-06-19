@@ -178,6 +178,7 @@ def request_entering_cs():
     lock.release_read()
     if current_state == "H":
         enter_cs()
+        return
     lock.acquire_write()
     SV[CURRENT_NODE_INDEX] = "R"
     SN[CURRENT_NODE_INDEX] += 1
