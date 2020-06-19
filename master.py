@@ -11,6 +11,7 @@ from shared import message_types
 
 MASTER_PORT = 1234
 LOG_LEVEL = logging.INFO
+TOTAL_RESOURCES = None
 
 communicator = None
 tasks = None
@@ -22,6 +23,13 @@ node_pids = []
 def main():
     logging.basicConfig(level=LOG_LEVEL,
                         format='%(levelname)s: %(message)s')
+    
+    if len(sys.argv) != 2:
+        logging.error(f"Usage: python {sys.argv[0]} TOTAL_RESOURCES_COUNT")
+        exit(1)
+    
+    global TOTAL_RESOURCES
+    TOTAL_RESOURCES = int(sys.argv[1])
     logging.debug("Reading tasks...")
     global tasks
     tasks = read_tasks()
@@ -48,10 +56,11 @@ def read_tasks():
 def start_nodes(node_ids):
     for node_id in node_ids:
         proc = subprocess.Popen([sys.executable,
-                          "node.py",
-                          str(MASTER_PORT),
-                          str(len(node_ids)),
-                          str(node_id)],)
+                                 "node.py",
+                                 str(MASTER_PORT),
+                                 str(len(node_ids)),
+                                 str(TOTAL_RESOURCES),
+                                 str(node_id)],)
         node_pids.append(proc.pid)
 
 

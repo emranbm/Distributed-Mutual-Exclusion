@@ -28,17 +28,19 @@ SN: List[int] = None
 TSV: List[State] = None
 TSN: List[int] = None
 lock = ReadWriteLock()
-TOTAL_RESOURCES = 10
+TOTAL_RESOURCES = None
 
 
 def main():
     global MASTER_PORT
     global NODES_COUNT
+    global TOTAL_RESOURCES
     global CURRENT_NODE_ID
     global CURRENT_NODE_INDEX
     MASTER_PORT = int(sys.argv[1])
     NODES_COUNT = int(sys.argv[2])
-    CURRENT_NODE_ID = int(sys.argv[3])
+    TOTAL_RESOURCES = int(sys.argv[3])
+    CURRENT_NODE_ID = int(sys.argv[4])
     CURRENT_NODE_INDEX = CURRENT_NODE_ID - 1
     logging.basicConfig(level=LOG_LEVEL,
                         format=f'Node {CURRENT_NODE_ID}: ' + '%(levelname)s: %(message)s')
