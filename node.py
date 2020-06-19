@@ -2,12 +2,13 @@ import sys
 import socket
 import json
 from typing import List
-from shared.communicator import Communicator
-from shared.task import Task
-from shared import message_types
 import time
 import logging
 import threading
+from shared.communicator import Communicator
+from shared.task import Task
+from shared import message_types
+from shared.readwritelock import ReadWriteLock
 
 MASTER_PORT = None
 NODES_COUNT = None
@@ -25,6 +26,7 @@ SV = None
 SN = None
 TSV = None
 TSN = None
+lock = ReadWriteLock()
 
 
 def main():
@@ -49,6 +51,7 @@ def initialize_arrays():
     global SN
     global TSV
     global TSN
+    lock.acquire_write()
     SV = [None for i in range(NODES_COUNT)]
     SN = [None for i in range(NODES_COUNT)]
     TSV = [None for i in range(NODES_COUNT)]
@@ -65,6 +68,7 @@ def initialize_arrays():
 
     if CURRENT_NODE_ID == 1:
         SV[CURRENT_NODE_INDEX] = "H"
+    lock.release_write()
 
 
 def request_getting_tasks():
@@ -91,28 +95,49 @@ def on_msg_received(msg, addr):
         logging.debug(f"Got CS request from node {node_id}")
         node_index = node_id - 1
         sn = msg['data']
-        if sn > SN[node_index]:
+        lock.acquire_read()
+        current_sn = SN[node_index]
+        lock.release_read()
+        if sn > current_sn:
+            lock.acquire_write()
             SN[node_index] = sn
+            lock.release_write()
+            lock.acquire_read()
             current_state = SV[CURRENT_NODE_INDEX]
+            lock.release_read()
             if current_state == "N":
+                lock.acquire_write()
                 SV[node_index] = "R"
+                lock.release_write()
             elif current_state == "R":
-                if SV[node_index] != "R":
+                lock.acquire_read()
+                node_state = SV[node_index]
+                lock.release_read()
+                if node_state != "R":
+                    lock.acquire_write()
                     SV[node_index] = "R"
+                    lock.release_write()
                     log_master(f"Requestingfdfd token from node {node_id}")
+                    lock.acquire_read()
                     m = {
                         "type": message_types.CS_REQUEST,
                         "node_id": CURRENT_NODE_ID,
                         "data": SN[CURRENT_NODE_INDEX]
                     }
+                    lock.release_read()
                     communicator.send(m, MASTER_PORT + node_id)
             elif current_state == "E":
+                lock.acquire_write()
                 SV[node_index] = "R"
+                lock.release_write()
             elif current_state == "H":
+                lock.acquire_write()
                 SV[node_index] = "R"
                 TSV[node_index] = "R"
                 TSN[node_index] = sn
                 SV[CURRENT_NODE_INDEX] = "N"
+                lock.release_write()
+                lock.acquire_read()
                 m = {
                     "type": message_types.TOKEN,
                     "node_id": CURRENT_NODE_ID,
@@ -121,17 +146,20 @@ def on_msg_received(msg, addr):
                         "TSN": TSN
                     }
                 }
+                lock.release_read()
                 communicator.send(m, MASTER_PORT + node_id)
             else:
                 raise Exception(f"Unknown state: {current_state}")
     elif msg_type == message_types.TOKEN:
         node_id = msg['node_id']
+        lock.acquire_write()
         TSV = msg['data']['TSV']
         TSN = msg['data']['TSN']
         log_master(f"Got token from node {node_id}")
         for j in range(NODES_COUNT):
             if TSV[j] == "R":
                 SV[j] = "R"
+        lock.release_write()
         enter_cs()
     else:
         raise Exception(f"Unknown message type: {msg_type}")
@@ -145,8 +173,12 @@ def run_task(task: Task):
 
 def request_entering_cs():
     log_master("Trying to enter critical section...")
-    if SV[CURRENT_NODE_INDEX] == "H":
+    lock.acquire_read()
+    current_state = SV[CURRENT_NODE_INDEX]
+    lock.release_read()
+    if current_state == "H":
         enter_cs()
+    lock.acquire_write()
     SV[CURRENT_NODE_INDEX] = "R"
     SN[CURRENT_NODE_INDEX] += 1
     msg = {
@@ -154,24 +186,30 @@ def request_entering_cs():
         "node_id": CURRENT_NODE_ID,
         "data": SN[CURRENT_NODE_INDEX]
     }
+    lock.release_write()
+    lock.acquire_read()
     for j in range(NODES_COUNT):
         if j == CURRENT_NODE_INDEX:
             continue
         if SV[j] == "R":
             log_master(f"Requesting token from node {j + 1}")
             communicator.send(msg, MASTER_PORT + j + 1)
+    lock.release_read()
 
 
 def enter_cs():
     log_master(
         f"Entered Critical Section! For doing task '{current_task.task_id}'")
+    lock.acquire_write()
     SV[CURRENT_NODE_INDEX] = "E"
+    lock.release_write()
     time.sleep(current_task.duration / 1000)
     exit_cs()
 
 
 def exit_cs():
     log_master("Leaving Critical Section...")
+    lock.acquire_write()
     SV[CURRENT_NODE_INDEX] = "N"
     TSV[CURRENT_NODE_INDEX] = "N"
     for j in range(NODES_COUNT):
@@ -206,7 +244,7 @@ def exit_cs():
             }
         }
         communicator.send(m, MASTER_PORT + requester_node_id)
-
+    lock.release_write()
     trigger_a_task()
 
 
