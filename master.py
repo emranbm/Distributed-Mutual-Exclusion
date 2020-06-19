@@ -60,7 +60,7 @@ def on_msg_recieved(msg, addr):
                   f"--msg: {msg}")
     (src_host, src_port) = addr
     msg_type = msg["type"]
-    node_id = msg["data"]["node_id"]
+    node_id = msg["node_id"]
     if msg_type == message_types.GET_TASKS:
         node_tasks = [t.to_dict() for t in tasks if t.node_id == node_id]
         logging.debug(f"Sending tasks to node {node_id}: {node_tasks}")
@@ -71,7 +71,7 @@ def on_msg_recieved(msg, addr):
         }
         communicator.send(resp, MASTER_PORT + node_id)
     elif msg_type == message_types.REPORT:
-        txt = msg['data']['txt']
+        txt = msg['data']
         logging.info(f"Report from {node_id}: {txt}")
 
 
