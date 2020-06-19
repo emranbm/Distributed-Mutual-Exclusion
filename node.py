@@ -97,7 +97,6 @@ def on_msg_received(msg, addr):
         tasks.sort(key=lambda i: i.task_id, reverse=True)
         threading.Thread(target=trigger_a_task).start()
     elif msg_type == message_types.CS_REQUEST:
-        logging.debug("Got CS request")
         node_id = msg['node_id']
         logging.debug(f"Got CS request from node {node_id}")
         node_index = node_id - 1
@@ -131,32 +130,8 @@ def on_msg_received(msg, addr):
                     SV[CURRENT_NODE_INDEX].current = 0
                     SV[node_index].current += count
                     lock.release_write()
-                    log_master(f"Sending {count} to node {node_id}")
-                    lock.acquire_read()
-                    m = {
-                        "type": message_types.TOKEN,
-                        "node_id": CURRENT_NODE_ID,
-                        "data": {
-                            "count": count,
-                            "TSV": [(s.current, s.need) for s in TSV],
-                            "TSN": TSN
-                        }
-                    }
-                    lock.release_read()
-                    communicator.send(m, MASTER_PORT + node_id)
-                    log_master(f"Requesting token from node {node_id}")
-                    lock.acquire_read()
-                    m = {
-                        "type": message_types.CS_REQUEST,
-                        "node_id": CURRENT_NODE_ID,
-                        "data": {
-                            "sn": SN[CURRENT_NODE_INDEX],
-                            "current": SV[CURRENT_NODE_INDEX].current,
-                            "need": SV[CURRENT_NODE_INDEX].need
-                        }
-                    }
-                    lock.release_read()
-                    communicator.send(m, MASTER_PORT + node_id)
+                    send_token(count, node_id)
+                    send_cs_request(node_id)
             elif current_state.current == current_state.need:
                 lock.acquire_write()
                 SV[node_index].need = node_need
@@ -170,18 +145,7 @@ def on_msg_received(msg, addr):
                 TSN[node_index] = sn
                 SV[CURRENT_NODE_INDEX].current -= extra_count
                 lock.release_write()
-                lock.acquire_read()
-                m = {
-                    "type": message_types.TOKEN,
-                    "node_id": CURRENT_NODE_ID,
-                    "data": {
-                        "count": extra_count,
-                        "TSV": [(s.current, s.need) for s in TSV],
-                        "TSN": TSN
-                    }
-                }
-                lock.release_read()
-                communicator.send(m, MASTER_PORT + node_id)
+                send_token(extra_count, node_id)
             else:
                 raise Exception(f"Unknown state: {current_state}")
     elif msg_type == message_types.TOKEN:
@@ -222,23 +186,11 @@ def try_entering_cs():
     # SV[CURRENT_NODE_INDEX] = "R"
     SN[CURRENT_NODE_INDEX] += 1
     lock.release_write()
-    lock.acquire_read()
-    msg = {
-        "type": message_types.CS_REQUEST,
-        "node_id": CURRENT_NODE_ID,
-        "data": {
-            "sn": SN[CURRENT_NODE_INDEX],
-            "current": SV[CURRENT_NODE_INDEX].current,
-            "need": SV[CURRENT_NODE_INDEX].need,
-        }
-    }
     for j in range(NODES_COUNT):
         if j == CURRENT_NODE_INDEX:
             continue
         if SV[j].need > 0 or SV[j].current > 0:
-            log_master(f"Requesting token from node {j + 1}")
-            communicator.send(msg, MASTER_PORT + j + 1)
-    lock.release_read()
+            send_cs_request(to_node_id=j+1)
 
 
 def enter_cs():
@@ -264,7 +216,7 @@ def exit_cs():
         else:
             SV[j] = TSV[j]
             SN[j] = TSN[j]
-            
+
     needer_node_id = None
     for j in range(NODES_COUNT):
         if SV[j].extra < 0:
@@ -273,20 +225,10 @@ def exit_cs():
     logging.debug(f"needer_node_id = {needer_node_id}")
     if needer_node_id is None:
         SV[CURRENT_NODE_INDEX].current = count
-        pass
+        lock.release_write()
     else:
-        log_master(f"Sending {count} tokens to node {needer_node_id}")
-        m = {
-            "type": message_types.TOKEN,
-            "node_id": CURRENT_NODE_ID,
-            "data": {
-                "count": count,
-                "TSV": [(t.current, t.need) for t in TSV],
-                "TSN": TSN
-            }
-        }
-        communicator.send(m, MASTER_PORT + needer_node_id)
-    lock.release_write()
+        lock.release_write()
+        send_token(count, needer_node_id)
     trigger_a_task()
 
 
@@ -303,6 +245,38 @@ def log_master(msg: str):
         "node_id": CURRENT_NODE_ID,
         "data": msg
     }, MASTER_PORT)
+
+
+def send_token(count: int, to_node_id: int):
+    log_master(f"Sending {count} tokens to node {to_node_id}")
+    lock.acquire_read()
+    m = {
+        "type": message_types.TOKEN,
+        "node_id": CURRENT_NODE_ID,
+        "data": {
+            "count": count,
+            "TSV": [(s.current, s.need) for s in TSV],
+            "TSN": TSN
+        }
+    }
+    lock.release_read()
+    communicator.send(m, MASTER_PORT + to_node_id)
+
+
+def send_cs_request(to_node_id: int):
+    log_master(f"Requesting token from node {to_node_id}")
+    lock.acquire_read()
+    m = {
+        "type": message_types.CS_REQUEST,
+        "node_id": CURRENT_NODE_ID,
+        "data": {
+            "sn": SN[CURRENT_NODE_INDEX],
+            "current": SV[CURRENT_NODE_INDEX].current,
+            "need": SV[CURRENT_NODE_INDEX].need
+        }
+    }
+    lock.release_read()
+    communicator.send(m, MASTER_PORT + to_node_id)
 
 
 if __name__ == "__main__":
